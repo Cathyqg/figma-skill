@@ -47,6 +47,7 @@ Reference: https://developers.figma.com/docs/rest-api/image-endpoints/
 
 - Shared links often use `node-id=123-456`
 - API expects `123:456`
+- Branch URLs are supported; prefer the `/branch/<BRANCH_KEY>` segment when present.
 - Always normalize before calling `/nodes`
 
 Reference: https://help.figma.com/hc/en-us/articles/360039823894-Get-started-with-URLs-and-links-in-Figma

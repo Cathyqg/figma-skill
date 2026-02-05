@@ -94,6 +94,7 @@ def parse_figma_url(url: str) -> tuple[str | None, list[str]]:
     parts = [p for p in parsed.path.split("/") if p]
 
     file_key = None
+    branch_key = None
     for i, part in enumerate(parts):
         if part in PATH_MARKERS and i + 1 < len(parts):
             file_key = parts[i + 1]
@@ -101,6 +102,8 @@ def parse_figma_url(url: str) -> tuple[str | None, list[str]]:
         if part == "community" and i + 2 < len(parts) and parts[i + 1] == "file":
             file_key = parts[i + 2]
             break
+        if part == "branch" and i + 1 < len(parts):
+            branch_key = parts[i + 1]
 
     node_ids: list[str] = []
     query = urllib.parse.parse_qs(parsed.query)
@@ -108,7 +111,8 @@ def parse_figma_url(url: str) -> tuple[str | None, list[str]]:
         for value in query.get(key, []):
             node_ids.extend([v.strip() for v in value.split(",") if v.strip()])
 
-    return file_key, [normalize_node_id(v) for v in node_ids]
+    resolved_key = branch_key or file_key
+    return resolved_key, [normalize_node_id(v) for v in node_ids]
 
 
 def compact(d: dict[str, Any]) -> dict[str, Any]:

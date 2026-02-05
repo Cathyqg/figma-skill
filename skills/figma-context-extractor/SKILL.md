@@ -14,6 +14,7 @@ Produce a markdown context file that keeps only implementation-relevant design d
 Collect these inputs before running extraction:
 
 - `figma_url` or `file_key` (required)
+  - Branch URLs are supported; if `/branch/<BRANCH_KEY>` exists it is used automatically.
 - `node_id` list (recommended; if absent, run discovery mode first)
 - `spec_file` markdown path from spec workflow (optional)
 - `FIGMA_TOKEN` environment variable (required by default)
