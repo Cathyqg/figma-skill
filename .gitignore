@@ -1,0 +1,9 @@
+﻿# Secrets
+.env
+
+# Outputs
+/tmp/
+
+# Python
+__pycache__/
+*.pyc

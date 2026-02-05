@@ -1,0 +1,4 @@
+interface:
+  display_name: "Figma Context Extractor"
+  short_description: "Condense Figma REST data into codegen-ready markdown"
+  default_prompt: "Build compact markdown context from Figma URL/node IDs for React+TypeScript implementation planning."
