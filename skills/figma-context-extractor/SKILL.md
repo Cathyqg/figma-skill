@@ -50,6 +50,17 @@ Collect these inputs before running extraction:
 
 ## Workflow
 
+0. Resolve the installed skill directory before running any script.
+   - Do not assume the active project contains `skills/figma-context-extractor/`.
+   - In Codex, prefer the skill file path metadata to locate this `SKILL.md`, then use its sibling `scripts/` directory.
+   - In OpenCode, if the skill path is not exposed directly, probe the documented install locations in this order and use the first match:
+     - `.opencode/skills/figma-context-extractor`
+     - `~/.config/opencode/skills/figma-context-extractor`
+     - `.agents/skills/figma-context-extractor`
+     - `~/.agents/skills/figma-context-extractor`
+     - `.claude/skills/figma-context-extractor`
+     - `~/.claude/skills/figma-context-extractor`
+   - When multiple copies exist, prefer the project-local copy over the global copy.
 1. Resolve `file_key` and optional `node-id` values from the Figma URL.
 2. Call the Figma file endpoint and keep the full response as the primary artifact.
 3. By default, also call `GET /v1/files/:file_key/images`, then keep only the asset URLs whose `imageRef` values are actually used in the returned node subtree.
@@ -63,7 +74,7 @@ Collect these inputs before running extraction:
 Default raw-only entry point:
 
 ```bash
-python skills/figma-context-extractor/scripts/fetch_figma_raw.py \
+python <skill-dir>/scripts/fetch_figma_raw.py \
   --figma-url "https://www.figma.com/design/<FILE_KEY>/<NAME>" \
   --output-dir specs/<feature>
 ```
@@ -71,7 +82,7 @@ python skills/figma-context-extractor/scripts/fetch_figma_raw.py \
 Fetch selected nodes and also include node render image URLs:
 
 ```bash
-python skills/figma-context-extractor/scripts/fetch_figma_raw.py \
+python <skill-dir>/scripts/fetch_figma_raw.py \
   --figma-url "https://www.figma.com/design/<FILE_KEY>/<NAME>?node-id=123-456" \
   --node-id "789:1011" \
   --include-render-image-urls \
@@ -82,7 +93,7 @@ python skills/figma-context-extractor/scripts/fetch_figma_raw.py \
 Disable file-level image asset URLs when you only want the file/nodes payload:
 
 ```bash
-python skills/figma-context-extractor/scripts/fetch_figma_raw.py \
+python <skill-dir>/scripts/fetch_figma_raw.py \
   --file-key "<FILE_KEY>" \
   --node-ids "123:456,789:1011" \
   --no-asset-urls \
@@ -105,6 +116,7 @@ The raw stage always produces:
 
 - Do not generate component code in this skill.
 - Prefer raw JSON as the stable and only script output.
+- Do not hard-code `skills/figma-context-extractor/...` as a project-relative path when invoking scripts.
 - Prefer node-scoped extraction over full-file extraction when node ids are known.
 - Keep script-side cleanup minimal.
 - Do any simple trimming or summarization in the skill instructions, not in Python, unless the raw payload format proves insufficient.
@@ -115,6 +127,6 @@ The raw stage always produces:
 
 ## Resources
 
-- Main entry: `scripts/fetch_figma_raw.py`
+- Main entry: `<skill-dir>/scripts/fetch_figma_raw.py`
 - Shared helpers: `scripts/figma_common.py`
 - Endpoint notes: `references/figma-rest-endpoints.md`

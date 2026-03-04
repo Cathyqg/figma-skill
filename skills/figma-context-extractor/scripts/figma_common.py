@@ -91,10 +91,20 @@ def resolve_env_value(env_name: str, env_file: str) -> str | None:
     candidates = [candidate]
     if not candidate.is_absolute():
         candidates = [Path.cwd() / candidate]
-        repo_root = Path(__file__).resolve().parents[3]
-        candidates.append(repo_root / candidate)
+        script_path = Path(__file__).resolve()
+        skill_root = script_path.parent.parent
+        candidates.append(skill_root / candidate)
 
+        skills_dir = skill_root.parent
+        if skills_dir.name == "skills":
+            candidates.append(skills_dir.parent / candidate)
+
+    seen: set[Path] = set()
     for path in candidates:
+        resolved = path.resolve(strict=False)
+        if resolved in seen:
+            continue
+        seen.add(resolved)
         value = read_env_value_from_file(path, env_name)
         if value:
             return value
