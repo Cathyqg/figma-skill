@@ -1,31 +1,32 @@
 ﻿#!/usr/bin/env python3
-"""Fetch raw Figma REST API responses for testing."""
+"""Fetch raw Figma REST API responses."""
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
-import re
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from pathlib import Path
 from typing import Any
 
+from figma_common import dedupe, normalize_node_id, parse_figma_url, resolve_output_path, resolve_token
+
 API_BASE = "https://api.figma.com/v1"
-PATH_MARKERS = {"file", "design", "proto", "board", "slides", "buzz"}
+ASSET_REF_KEYS = {"imageRef"}
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Fetch raw Figma REST responses (test-only)")
+    p = argparse.ArgumentParser(description="Fetch raw Figma REST responses")
     p.add_argument("--figma-url", help="Figma URL, can include node-id")
     p.add_argument("--file-key", help="Figma file key; overrides URL parsing")
     p.add_argument("--node-id", action="append", default=[], help="Repeatable node id")
     p.add_argument("--node-ids", help="Comma-separated node ids")
-    p.add_argument("--output", required=True, help="Output JSON path")
+    p.add_argument("--output", help="Output JSON path (overrides output-dir/output-name)")
+    p.add_argument("--output-dir", help="Output directory (defaults to FIGMA_OUTPUT_DIR or tmp/figma)")
+    p.add_argument("--output-name", help="Output filename when using output-dir")
     p.add_argument("--token-env", default="FIGMA_TOKEN", help="Figma token env variable")
     p.add_argument("--env-file", default=".env", help="Optional dotenv file path")
     p.add_argument(
@@ -37,90 +38,23 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--depth", type=int, default=4, help="Depth for nodes extraction")
     p.add_argument("--discovery-depth", type=int, default=1, help="Depth for file discovery")
     p.add_argument("--include-geometry", action="store_true", help="Pass geometry=paths")
+    p.add_argument(
+        "--no-asset-urls",
+        "--no-fill-image-urls",
+        dest="no_fill_image_urls",
+        action="store_true",
+        help="Disable the supplemental /files/:key/images call for file-level image asset URLs",
+    )
+    p.add_argument(
+        "--include-render-image-urls",
+        action="store_true",
+        help="Also call /images/:key to get rendered image URLs for the selected node ids",
+    )
+    p.add_argument("--render-format", choices=["png", "jpg", "svg", "pdf"], default="png")
+    p.add_argument("--render-scale", type=float, default=2.0)
     p.add_argument("--plugin-data", help="Pass plugin_data query value")
     p.add_argument("--timeout", type=int, default=30)
     return p.parse_args()
-
-
-def normalize_node_id(value: str) -> str:
-    raw = urllib.parse.unquote(value.strip())
-    if re.fullmatch(r"\d+-\d+", raw):
-        left, right = raw.split("-", 1)
-        return f"{left}:{right}"
-    return raw
-
-
-def parse_figma_url(url: str) -> tuple[str | None, list[str]]:
-    parsed = urllib.parse.urlparse(url)
-    parts = [p for p in parsed.path.split("/") if p]
-    file_key = None
-    for i, part in enumerate(parts):
-        if part in PATH_MARKERS and i + 1 < len(parts):
-            file_key = parts[i + 1]
-            break
-        if part == "community" and i + 2 < len(parts) and parts[i + 1] == "file":
-            file_key = parts[i + 2]
-            break
-    node_ids: list[str] = []
-    query = urllib.parse.parse_qs(parsed.query)
-    for key in ("node-id", "node_id"):
-        for value in query.get(key, []):
-            node_ids.extend([v.strip() for v in value.split(",") if v.strip()])
-    return file_key, [normalize_node_id(v) for v in node_ids]
-
-
-def dedupe(items: list[str]) -> list[str]:
-    seen: set[str] = set()
-    out: list[str] = []
-    for item in items:
-        if not item or item in seen:
-            continue
-        seen.add(item)
-        out.append(item)
-    return out
-
-
-def read_token_from_env_file(env_file: Path, token_env: str) -> str | None:
-    if not env_file.exists():
-        return None
-    try:
-        lines = env_file.read_text(encoding="utf-8-sig").splitlines()
-    except OSError:
-        return None
-
-    for line in lines:
-        item = line.strip()
-        if not item or item.startswith("#"):
-            continue
-        if item.startswith("export "):
-            item = item[len("export ") :].strip()
-        if "=" not in item:
-            continue
-        key, value = item.split("=", 1)
-        if key.strip() != token_env:
-            continue
-        cleaned = value.strip().strip("'").strip('"')
-        return cleaned or None
-    return None
-
-
-def resolve_token(token_env: str, env_file: str) -> str | None:
-    env_value = os.environ.get(token_env)
-    if env_value:
-        return env_value
-
-    candidate = Path(env_file)
-    candidates = [candidate]
-    if not candidate.is_absolute():
-        candidates = [Path.cwd() / candidate]
-        repo_root = Path(__file__).resolve().parents[3]
-        candidates.append(repo_root / candidate)
-
-    for path in candidates:
-        token = read_token_from_env_file(path, token_env)
-        if token:
-            return token
-    return None
 
 
 def build_headers(token: str, mode: str) -> dict[str, str]:
@@ -145,7 +79,116 @@ def request_json(url: str, headers: dict[str, str], timeout: int) -> dict[str, A
                 time.sleep(max(int(wait) if wait.isdigit() else 1, 1))
                 continue
             raise RuntimeError(f"Figma API {e.code}: {body}") from e
+        except urllib.error.URLError as e:
+            if attempt < 3:
+                time.sleep(1)
+                continue
+            raise RuntimeError(f"Network error: {e}") from e
     raise RuntimeError("Request retries exhausted")
+
+
+def request_supplemental_json(
+    url: str,
+    headers: dict[str, str],
+    timeout: int,
+) -> tuple[dict[str, Any] | None, str | None]:
+    try:
+        return request_json(url, headers, timeout), None
+    except RuntimeError as exc:
+        return None, str(exc)
+
+
+def collect_asset_refs(value: Any, refs: set[str]) -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key in ASSET_REF_KEYS and isinstance(item, str) and item:
+                refs.add(item)
+                continue
+            collect_asset_refs(item, refs)
+        return
+
+    if isinstance(value, list):
+        for item in value:
+            collect_asset_refs(item, refs)
+
+
+def collect_payload_asset_refs(payload: dict[str, Any], node_ids: list[str]) -> set[str]:
+    refs: set[str] = set()
+
+    node_map = payload.get("nodes")
+    if node_ids and isinstance(node_map, dict):
+        for node_id in node_ids:
+            entry = node_map.get(node_id)
+            if not isinstance(entry, dict):
+                continue
+            collect_asset_refs(entry.get("document"), refs)
+        return refs
+
+    collect_asset_refs(payload.get("document"), refs)
+    return refs
+
+
+def filter_fill_images_payload(fill_payload: dict[str, Any], used_refs: set[str]) -> dict[str, Any]:
+    if not used_refs:
+        filtered = dict(fill_payload)
+        meta = filtered.get("meta")
+        if isinstance(meta, dict):
+            filtered_meta = dict(meta)
+            if isinstance(filtered_meta.get("images"), dict):
+                filtered_meta["images"] = {}
+                filtered["meta"] = filtered_meta
+        return filtered
+
+    meta = fill_payload.get("meta")
+    if not isinstance(meta, dict):
+        return fill_payload
+
+    images = meta.get("images")
+    if not isinstance(images, dict):
+        return fill_payload
+
+    filtered_images = {ref: url for ref, url in images.items() if ref in used_refs}
+    filtered_meta = dict(meta)
+    filtered_meta["images"] = filtered_images
+
+    filtered = dict(fill_payload)
+    filtered["meta"] = filtered_meta
+    return filtered
+
+
+def merge_supplemental_payload(
+    payload: dict[str, Any],
+    file_key: str,
+    node_ids: list[str],
+    headers: dict[str, str],
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    merged = dict(payload)
+    used_refs = collect_payload_asset_refs(payload, node_ids)
+    merged["_figma_used_asset_refs"] = sorted(used_refs)
+
+    if not args.no_fill_image_urls:
+        fill_url = f"{API_BASE}/files/{file_key}/images"
+        fill_payload, fill_error = request_supplemental_json(fill_url, headers, args.timeout)
+        if fill_payload is not None:
+            merged["_figma_fill_images"] = filter_fill_images_payload(fill_payload, used_refs)
+        elif fill_error:
+            merged["_figma_fill_images_error"] = fill_error
+
+    if node_ids and args.include_render_image_urls:
+        params = {
+            "ids": ",".join(node_ids),
+            "format": args.render_format,
+            "scale": args.render_scale,
+        }
+        render_url = f"{API_BASE}/images/{file_key}?" + urllib.parse.urlencode(params, safe=",")
+        render_payload, render_error = request_supplemental_json(render_url, headers, args.timeout)
+        if render_payload is not None:
+            merged["_figma_render_images"] = render_payload
+        elif render_error:
+            merged["_figma_render_images_error"] = render_error
+
+    return merged
 
 
 def main() -> int:
@@ -200,7 +243,18 @@ def main() -> int:
         print(f"Error: {message}", file=sys.stderr)
         return 1
 
-    out_path = Path(args.output)
+    payload = merge_supplemental_payload(payload, file_key, node_ids, headers, args)
+
+    out_path = resolve_output_path(
+        output=args.output,
+        output_dir=args.output_dir,
+        output_name=args.output_name,
+        env_file=args.env_file,
+        file_key=file_key,
+        node_ids=node_ids,
+        payload=payload,
+        suffix="-raw.json",
+    )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Wrote raw response: {out_path}")
