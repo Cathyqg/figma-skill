@@ -42,6 +42,9 @@ Produce a stable raw JSON artifact from official Figma REST endpoints. Keep scri
   - Output filename inside `--output-dir`.
 - Resolution order
   - `--output` -> `--output-dir` -> `FIGMA_OUTPUT_DIR` -> `tmp/figma`
+- Team convention
+  - Use `FIGMA_OUTPUT_DIR` as default and omit `--output-dir` in normal commands.
+  - Pass `--output-dir` only for temporary per-run override.
 
 ### Auth and Environment
 
@@ -111,45 +114,52 @@ Start with the smallest payload that can answer the task. Re-run only when the c
 4. Only when requested, run `GET /v1/images/:file_key` for node render URLs.
 5. Write one stable raw JSON file and return raw JSON only.
 
+## Python Runtime Compatibility
+
+Use PowerShell wrapper entry point to avoid hard-coding a Python executable name.
+
+- Wrapper: `<skill-dir>/scripts/run_fetch_figma_raw.ps1`
+- Detection order: `py -3` -> `py` -> `python3` -> `python`
+- Behavior:
+  - Forwards all CLI flags to `fetch_figma_raw.py`
+  - Preserves script exit code
+  - Fails with explicit error if no Python launcher is found
+
 ## Command Recipes
 
 Default node/file extraction:
 
-```bash
-python <skill-dir>/scripts/fetch_figma_raw.py \
-  --figma-url "https://www.figma.com/design/<FILE_KEY>/<NAME>" \
-  --output-dir specs/<feature>
+```powershell
+& "<skill-dir>/scripts/run_fetch_figma_raw.ps1" `
+  --figma-url "https://www.figma.com/design/<FILE_KEY>/<NAME>"
 ```
 
 Vector-fidelity extraction (geometry):
 
-```bash
-python <skill-dir>/scripts/fetch_figma_raw.py \
-  --figma-url "https://www.figma.com/design/<FILE_KEY>/<NAME>?node-id=123-456" \
-  --include-geometry \
-  --depth 8 \
-  --output-dir specs/<feature>
+```powershell
+& "<skill-dir>/scripts/run_fetch_figma_raw.ps1" `
+  --figma-url "https://www.figma.com/design/<FILE_KEY>/<NAME>?node-id=123-456" `
+  --include-geometry `
+  --depth 8
 ```
 
 Node render URLs (for visual cross-check):
 
-```bash
-python <skill-dir>/scripts/fetch_figma_raw.py \
-  --figma-url "https://www.figma.com/design/<FILE_KEY>/<NAME>?node-id=123-456" \
-  --include-render-image-urls \
-  --render-format png \
-  --render-scale 2 \
-  --output-dir specs/<feature>
+```powershell
+& "<skill-dir>/scripts/run_fetch_figma_raw.ps1" `
+  --figma-url "https://www.figma.com/design/<FILE_KEY>/<NAME>?node-id=123-456" `
+  --include-render-image-urls `
+  --render-format png `
+  --render-scale 2
 ```
 
 Disable file-level fill asset URLs:
 
-```bash
-python <skill-dir>/scripts/fetch_figma_raw.py \
-  --file-key "<FILE_KEY>" \
-  --node-ids "123:456,789:1011" \
-  --no-asset-urls \
-  --output-dir specs/<feature>
+```powershell
+& "<skill-dir>/scripts/run_fetch_figma_raw.ps1" `
+  --file-key "<FILE_KEY>" `
+  --node-ids "123:456,789:1011" `
+  --no-asset-urls
 ```
 
 ## Output Contract
@@ -193,6 +203,7 @@ Raw output may include these supplemental fields:
 
 ## Resources
 
-- Main entry: `<skill-dir>/scripts/fetch_figma_raw.py`
+- Main entry: `<skill-dir>/scripts/run_fetch_figma_raw.ps1`
+- Core script: `<skill-dir>/scripts/fetch_figma_raw.py`
 - Shared helpers: `<skill-dir>/scripts/figma_common.py`
 - Endpoint notes: `<skill-dir>/references/figma-rest-endpoints.md`
