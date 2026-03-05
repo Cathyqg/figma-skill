@@ -1,4 +1,4 @@
 interface:
   display_name: "Figma Context Extractor"
-  short_description: "Fetch raw Figma REST data with fill asset URLs and optional render URLs"
-  default_prompt: "Fetch raw Figma JSON from a Figma URL or node IDs, include file-level image fill asset URLs by default, optionally include node render image URLs, and keep cleanup minimal for downstream React+TypeScript planning."
+  short_description: "Fetch raw Figma JSON with asset and optional render URLs"
+  default_prompt: "Use $figma-context-extractor to fetch raw Figma JSON from a URL or node IDs, include fill asset URLs by default, and add render URLs only when needed."

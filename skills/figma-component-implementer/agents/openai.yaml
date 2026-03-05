@@ -1,4 +1,4 @@
 interface:
   display_name: "Figma Component Implementer"
   short_description: "Turn Figma raw context into reusable React component changes"
-  default_prompt: "Read Figma raw design context, inspect existing components and repo rules, then implement or extend React components with reuse-first behavior."
+  default_prompt: "Use $figma-component-implementer to map Figma raw context into reuse-first React component and Storybook changes that follow repository rules."

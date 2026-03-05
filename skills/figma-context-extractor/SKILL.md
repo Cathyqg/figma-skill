@@ -1,77 +1,119 @@
 ---
 name: figma-context-extractor
-description: Fetch Figma design data through official REST API endpoints with a single raw-only script. The stable artifact is the raw JSON response, with file-level image fill asset URLs included by default and node render image URLs available as an explicit option. Use when a user provides a Figma URL or node ids and needs design context for downstream React+TypeScript work (not component code generation).
+description: Fetch raw Figma REST data for downstream UI implementation. Use when a user provides a Figma URL or node ids and needs stable JSON artifacts (including image asset URLs by default and optional render URLs) before component coding.
 ---
 
 # Figma Context Extractor
 
 ## Goal
 
-Produce a stable raw Figma JSON artifact. Keep script-side processing minimal and do any lightweight cleanup in the skill prompt itself.
+Produce a stable raw JSON artifact from official Figma REST endpoints. Keep script-side processing minimal and deterministic.
 
-## Inputs
-
-Collect these inputs before running extraction:
+## Required Inputs
 
 - `figma_url` or `file_key` (required)
-  - Branch URLs are supported; if `/branch/<BRANCH_KEY>` exists it is used automatically.
-- `node_id` list (recommended; if absent, the raw stage can still run in discovery/full-file mode)
-- `FIGMA_TOKEN` environment variable (required by default)
-- `FIGMA_OUTPUT_DIR` environment variable (optional): default output directory for generated raw/context files
-- `auth_mode` (optional): `pat` default; use `oauth` only for OAuth bearer tokens
-- `env_file` (optional): defaults to `.env`, used when env var is missing
-- `no_asset_urls` (optional): disable the supplemental file-level image asset URL call
-  - Backward-compatible alias: `no_fill_image_urls`
-- `include_render_image_urls` (optional): enable node render image URLs for selected node ids
+  - Branch URLs are supported. If `/branch/<BRANCH_KEY>` exists, use branch key first.
+- `FIGMA_TOKEN` (required by default)
+- `node_id` list (recommended for node-scoped extraction)
+- `FIGMA_OUTPUT_DIR` (optional default output directory)
+- `auth_mode` (optional, default `pat`)
+- `env_file` (optional, default `.env`)
 
-## Parameter Rules
+## CLI Parameter Catalog
 
-- `--include-geometry`
-  - Enable only when the user needs vector fidelity, such as recreating icons, logos, or custom SVG paths.
-  - This adds `geometry=paths` to the Figma request and increases payload size.
-  - Leave it off for layout, text, spacing, color, and general code-structure extraction.
-- `--depth`
-  - Start with `4` for node-scoped extraction.
-  - Raise to `8` or higher when expected child layers, nested assets, or deeper structure are missing.
-  - Keep it as low as possible on large frames to avoid oversized raw payloads.
-- `--discovery-depth`
-  - Use `1` for lightweight file discovery when no node id is known.
-  - Increase only if the top-level structure is too shallow to identify the correct target node.
-- `--no-asset-urls`
-  - Keep asset URL fetching enabled by default.
-  - Disable it only when the user explicitly wants the smallest possible payload or does not need image assets.
+### Target Selection
+
+- `--figma-url`
+  - Parse file key and optional `node-id` from URL.
+- `--file-key`
+  - Override file key parsed from URL.
+- `--node-id`
+  - Repeatable node id input.
+- `--node-ids`
+  - Comma-separated node ids.
+
+### Output
+
+- `--output`
+  - Full output file path. Highest priority.
+- `--output-dir`
+  - Output directory. Used when `--output` is not set.
+- `--output-name`
+  - Output filename inside `--output-dir`.
+- Resolution order
+  - `--output` -> `--output-dir` -> `FIGMA_OUTPUT_DIR` -> `tmp/figma`
+
+### Auth and Environment
+
+- `--token-env` (default `FIGMA_TOKEN`)
+- `--env-file` (default `.env`)
+- `--auth-mode` (default `pat`)
+  - `pat`: `X-Figma-Token`
+  - `oauth`: `Authorization: Bearer`
+  - `both`: send both headers
+
+### Payload Size and Fidelity
+
+- `--depth` (default `4`)
+  - Used by `GET /v1/files/:file_key/nodes`.
+- `--discovery-depth` (default `1`)
+  - Used by `GET /v1/files/:file_key` when node ids are absent.
+- `--include-geometry` (default off)
+  - Adds `geometry=paths`. Use only when vector path fidelity is required.
+- `--plugin-data` (default unset)
+  - Include plugin payload only when needed.
+
+### Supplemental Images
+
+- `--no-asset-urls` (alias: `--no-fill-image-urls`)
+  - Disable `GET /v1/files/:file_key/images`.
 - `--include-render-image-urls`
-  - Enable it only when the user needs a rendered preview/export of the selected node.
-  - Keep it off when the user only needs source design data and asset references.
-- Agent behavior
-  - Do not enumerate every possible flag in normal usage.
-  - Do apply these rules when choosing high-impact flags.
-  - When the task is ambiguous, prefer smaller payloads first, then rerun with higher-cost flags only if the result is insufficient.
+  - Enable `GET /v1/images/:file_key` for selected node ids.
+- `--render-format` (default `png`)
+- `--render-scale` (default `2.0`)
+
+### Network
+
+- `--timeout` (default `30` seconds)
+
+## Escalation Rules
+
+Start with the smallest payload that can answer the task. Re-run only when the current result is insufficient.
+
+- Symptom: target children are missing
+  - Action: increase `--depth` (`4 -> 8 -> 12`)
+- Symptom: no node id yet
+  - Action: run discovery with `--discovery-depth 1`; increase only if too shallow
+- Symptom: vector path details are missing for icons/logos
+  - Action: add `--include-geometry`
+- Symptom: need node preview/export image
+  - Action: add `--include-render-image-urls`
+- Symptom: plugin metadata is required
+  - Action: add `--plugin-data <value>`
+- Symptom: payload too large and image assets are irrelevant
+  - Action: add `--no-asset-urls`
 
 ## Workflow
 
-0. Resolve the installed skill directory before running any script.
-   - Do not assume the active project contains `skills/figma-context-extractor/`.
-   - In Codex, prefer the skill file path metadata to locate this `SKILL.md`, then use its sibling `scripts/` directory.
-   - In OpenCode, if the skill path is not exposed directly, probe the documented install locations in this order and use the first match:
+0. Resolve installed skill directory before invoking scripts.
+   - Do not assume project-relative `skills/figma-context-extractor/`.
+   - In Codex, locate this `SKILL.md` and use sibling `scripts/`.
+   - In OpenCode, probe these paths and use first match:
      - `.opencode/skills/figma-context-extractor`
      - `~/.config/opencode/skills/figma-context-extractor`
      - `.agents/skills/figma-context-extractor`
      - `~/.agents/skills/figma-context-extractor`
      - `.claude/skills/figma-context-extractor`
      - `~/.claude/skills/figma-context-extractor`
-   - When multiple copies exist, prefer the project-local copy over the global copy.
-1. Resolve `file_key` and optional `node-id` values from the Figma URL.
-2. Call the Figma file endpoint and keep the full response as the primary artifact.
-3. By default, also call `GET /v1/files/:file_key/images`, then keep only the asset URLs whose `imageRef` values are actually used in the returned node subtree.
-4. Only when render previews are explicitly requested, call `GET /v1/images/:file_key` for the selected node ids.
-5. If no node id is present, use the raw discovery/full-file payload to choose target node ids.
-6. Do only lightweight cleanup in the skill itself, such as selecting relevant nodes or fields for the next agent step.
-7. Return raw JSON only.
+1. Resolve `file_key` and node ids from URL/flags.
+2. Run `GET /v1/files/:file_key/nodes` when node ids exist; otherwise run `GET /v1/files/:file_key`.
+3. By default run `GET /v1/files/:file_key/images`, then keep only image refs used in current payload.
+4. Only when requested, run `GET /v1/images/:file_key` for node render URLs.
+5. Write one stable raw JSON file and return raw JSON only.
 
 ## Command Recipes
 
-Default raw-only entry point:
+Default node/file extraction:
 
 ```bash
 python <skill-dir>/scripts/fetch_figma_raw.py \
@@ -79,18 +121,28 @@ python <skill-dir>/scripts/fetch_figma_raw.py \
   --output-dir specs/<feature>
 ```
 
-Fetch selected nodes and also include node render image URLs:
+Vector-fidelity extraction (geometry):
 
 ```bash
 python <skill-dir>/scripts/fetch_figma_raw.py \
   --figma-url "https://www.figma.com/design/<FILE_KEY>/<NAME>?node-id=123-456" \
-  --node-id "789:1011" \
-  --include-render-image-urls \
-  --output-dir specs/<feature> \
-  --depth 4
+  --include-geometry \
+  --depth 8 \
+  --output-dir specs/<feature>
 ```
 
-Disable file-level image asset URLs when you only want the file/nodes payload:
+Node render URLs (for visual cross-check):
+
+```bash
+python <skill-dir>/scripts/fetch_figma_raw.py \
+  --figma-url "https://www.figma.com/design/<FILE_KEY>/<NAME>?node-id=123-456" \
+  --include-render-image-urls \
+  --render-format png \
+  --render-scale 2 \
+  --output-dir specs/<feature>
+```
+
+Disable file-level fill asset URLs:
 
 ```bash
 python <skill-dir>/scripts/fetch_figma_raw.py \
@@ -102,31 +154,45 @@ python <skill-dir>/scripts/fetch_figma_raw.py \
 
 ## Output Contract
 
-The raw stage always produces:
+Raw output may include these supplemental fields:
 
-- Full JSON from `GET /v1/files/:file_key` or `GET /v1/files/:file_key/nodes`
-- The extracted `imageRef` list from the returned payload, in `_figma_used_asset_refs`
-- Only the file-level image fill asset URLs actually referenced by the returned node subtree, in `_figma_fill_images`
-- File-level image asset fetch errors in `_figma_fill_images_error` when the main payload succeeds but the image asset call fails
-- Node render image URLs in `_figma_render_images` only when `--include-render-image-urls` is used
-- Node render image fetch errors in `_figma_render_images_error` when the main payload succeeds but the render image call fails
-- A stable file written to `FIGMA_OUTPUT_DIR` (or an explicit output path)
+- `_figma_used_asset_refs`
+  - Sorted `imageRef` values found in returned subtree.
+- `_figma_fill_images`
+  - Filtered payload from `GET /v1/files/:file_key/images`.
+- `_figma_fill_images_by_ref`
+  - Flattened `imageRef -> url` map derived from `_figma_fill_images`.
+- `_figma_fill_images_error`
+  - Error string when fill image call fails.
+- `_figma_render_images`
+  - Raw payload from `GET /v1/images/:file_key` (opt-in).
+- `_figma_render_images_by_node_id`
+  - Flattened `nodeId -> url` map derived from `_figma_render_images`.
+- `_figma_render_images_error`
+  - Error string when render image call fails.
+
+## Troubleshooting
+
+- `_figma_fill_images_by_ref` is empty and `_figma_used_asset_refs` is empty
+  - Selected nodes likely have no `IMAGE` fills. This is not an extractor failure.
+- `_figma_used_asset_refs` is non-empty but `_figma_fill_images_by_ref` is empty
+  - Check `_figma_fill_images_error` and token scope.
+- Child layers are missing
+  - Re-run with higher `--depth`.
+- Vector paths are missing
+  - Re-run with `--include-geometry`.
 
 ## Guardrails
 
 - Do not generate component code in this skill.
-- Prefer raw JSON as the stable and only script output.
-- Do not hard-code `skills/figma-context-extractor/...` as a project-relative path when invoking scripts.
-- Prefer node-scoped extraction over full-file extraction when node ids are known.
-- Keep script-side cleanup minimal.
-- Do any simple trimming or summarization in the skill instructions, not in Python, unless the raw payload format proves insufficient.
-- Keep file-level image asset URL fetching enabled by default unless the user explicitly disables it.
-- Filter asset URLs down to the `imageRef` values actually present in the returned payload, instead of keeping the whole file-wide asset map.
-- Inspect `_figma_used_asset_refs` first when debugging why `_figma_fill_images` is empty.
-- Keep node render image URL fetching opt-in because it is a different artifact from source image assets.
+- Keep raw JSON as the stable script output.
+- Prefer node-scoped extraction when node ids are known.
+- Keep cleanup minimal and deterministic.
+- Keep file-level asset URL fetching enabled unless explicitly disabled.
+- Keep render image fetching opt-in.
 
 ## Resources
 
 - Main entry: `<skill-dir>/scripts/fetch_figma_raw.py`
-- Shared helpers: `scripts/figma_common.py`
-- Endpoint notes: `references/figma-rest-endpoints.md`
+- Shared helpers: `<skill-dir>/scripts/figma_common.py`
+- Endpoint notes: `<skill-dir>/references/figma-rest-endpoints.md`

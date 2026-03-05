@@ -1,74 +1,118 @@
 ---
 name: figma-component-implementer
-description: Implement or extend React components from Figma raw design context and an existing component codebase. Use when a raw JSON artifact from figma-context-extractor is available and the task is to map design nodes to reusable components, follow repository rules, and generate or modify component code.
+description: Implement or extend React components from Figma raw context and an existing codebase. Use after figma-context-extractor when the task is Figma-to-code mapping, component reuse decisions, Storybook alignment, and repository-consistent implementation.
 ---
 
 # Figma Component Implementer
 
 ## Overview
 
-Read Figma raw design context, inspect the existing component library, and implement the target UI with reuse-first behavior. Use this skill after `figma-context-extractor`; this skill assumes the raw JSON already exists and focuses on code generation decisions, not Figma API retrieval.
+Read raw Figma JSON, inspect existing repository components first, and implement UI with reuse-first behavior. This skill does not call Figma APIs directly; it consumes artifacts from `figma-context-extractor`.
 
 ## Rule Precedence
 
-1. Follow the repository root `AGENTS.md` first.
-2. Apply this skill's workflow and decision rules next.
-3. When the two appear to conflict, treat `AGENTS.md` as the repository contract and adapt the implementation to it.
-4. If a required repository rule is still ambiguous, inspect nearby existing components before making a new assumption.
+1. Follow repository root `AGENTS.md` first.
+2. Apply this skill's workflow and fallback rules next.
+3. If conflict exists, treat `AGENTS.md` as repository contract.
+4. Resolve ambiguity by inspecting nearby existing components before inventing new patterns.
 
 ## Required Inputs
 
 - Raw design context file path from `figma-context-extractor`
 - Target node id or explicit target UI scope
-- Relevant existing component files, primitives, and design-system entry points
+- Relevant existing component files and stories
 - Repository root `AGENTS.md`
-- Repository styling rules, naming rules, and token usage rules
-- Optional render image URL when a visual cross-check is needed
+- Optional visual aids:
+  - `_figma_fill_images_by_ref` for source asset URLs
+  - `_figma_render_images_by_node_id` for render cross-check only
 
 ## Workflow
 
-1. Read the repository root `AGENTS.md` and treat it as the baseline contract for all implementation decisions.
-2. Confirm the raw design context exists and covers the target node.
-3. If the raw file is missing expected layers, vectors, or assets, rerun `figma-context-extractor` with higher-cost flags before coding.
-4. Read the target node subtree and identify semantic blocks such as containers, cards, list rows, form fields, actions, badges, and icons.
-5. Search the repository for existing components that match the same semantic role before writing any new code.
-6. Prefer extending an existing component with props, variants, or composition slots.
-7. Create a new component only when reuse is clearly insufficient.
-8. Implement the final code in the repository's existing style, API shape, and file structure.
-9. Cross-check the result against the raw design data and any available render image.
+1. Read `AGENTS.md` and nearby component implementations before writing code.
+2. Confirm raw context includes the target node and enough child depth.
+3. Parse target subtree into semantic UI blocks.
+4. Map blocks to existing components and BDL primitives before creating anything new.
+5. Implement minimal code changes in existing repository style.
+6. Update matching `*.stories.tsx` when behavior or public surface changes.
+7. Validate stories against Figma data and start Storybook automatically.
+
+## Extractor Re-run Policy
+
+Re-running extractor is valid and effective, but only when tied to a specific missing signal.
+
+- Missing child layers or list items
+  - Re-run extractor with higher `--depth`.
+- Missing vector path data for custom icon/illustration
+  - Re-run with `--include-geometry`.
+- Need node screenshot-style comparison
+  - Re-run with `--include-render-image-urls`.
+- Need plugin-owned metadata
+  - Re-run with `--plugin-data`.
+- No node id known
+  - Re-run in discovery mode and identify target node first.
+
+Do not re-run extractor "just in case". State the exact missing field that triggered re-extraction.
+
+## Figma Parsing Coverage Checklist
+
+When interpreting raw JSON, cover these fields before concluding data is missing:
+
+- Layout and structure
+  - `layoutMode`, `itemSpacing`, paddings, sizing modes, child hierarchy
+- Text content
+  - `characters`, font style object, line-height, alignment
+- Color and style signals
+  - `fills`, `strokes`, style ids, corner radius, effects
+- Image assets
+  - `fills[].type == IMAGE` with `imageRef`
+  - Resolve image URL from `_figma_fill_images_by_ref[imageRef]`
+- Vector and icon candidates
+  - `VECTOR` nodes, icon-like naming, repeated symbol usage
 
 ## Interpretation Rules
 
 - Do not translate every `FRAME` into a React component.
-- Treat Figma layer hierarchy as design evidence, not as a direct DOM blueprint.
-- Treat repeated sibling structures as candidate list items, cards, rows, tabs, or menu entries.
-- Treat `mdi:*`, `icon-*`, and vector-only nodes as icon candidates.
-- Prefer semantic layout (`flex`, `grid`, existing layout primitives) over copying raw absolute positions.
-- Use exact vector geometry only when the target must reproduce a custom icon or illustration precisely.
-- Use `_figma_fill_images` only as source asset references; never invent missing asset URLs.
+- Treat Figma hierarchy as evidence, not direct DOM blueprint.
+- Prefer semantic layout (`flex`, `grid`, existing layout primitives) over absolute positioning.
+- Treat repeated sibling structures as data-driven candidates.
+- Keep component names semantic; do not expose Figma layer ids/names.
 
-## Component Reuse Rules
+## Reuse Rules
 
 - Reuse existing components before creating new ones.
-- Extend an existing component with props or variants before cloning or rewriting it.
-- Obey repository-level constraints from `AGENTS.md` when deciding whether to reuse local components, BDL primitives, or both.
-- Preserve the repository's public component APIs unless the user explicitly asks for a breaking change.
-- Prefer existing tokens, spacing scales, typography primitives, and color roles over Figma literal values when both exist.
-- Introduce new subcomponents only when they improve reuse or keep the parent component readable.
-- Avoid one-off wrappers and one-off styles when an existing primitive already solves the same problem.
+- Extend with props/variants before cloning or rewriting.
+- Follow established BDL usage from current repository code.
+- Preserve existing public APIs unless user explicitly asks for breaking changes.
+- Prefer existing tokens and scales over literal Figma values.
 
-## Codegen Rules
+## Storybook Data Binding Contract
 
-- Read nearby existing components first and mirror the repository's proven usage of BDL before consulting package internals.
-- Match the existing repository style for file names, exports, props, hooks, and styling.
-- Keep component names semantic. Do not expose Figma-derived names like `Frame34021` as production component names.
-- Keep code focused on the target UI. Do not dump unrelated nodes into the same component.
-- When the design implies data-driven repetition, convert repeated structures into mapped render logic instead of copy-pasted JSX.
-- When data is ambiguous, add the smallest explicit assumption needed and keep the implementation easy to revise.
+When component behavior or visuals change, update story data using real Figma-derived values.
+
+- Story text and numbers
+  - Use Figma `characters` and relevant numeric values for at least one baseline story.
+- Story images
+  - If node contains `imageRef`, wire `_figma_fill_images_by_ref` URLs into story args/fixtures.
+  - Do not silently drop image data when URLs are available.
+- Render URL usage
+  - `_figma_render_images_by_node_id` is for visual comparison only, not production asset source.
+- Missing images handling
+  - If no `imageRef` exists in target subtree, state that explicitly in notes instead of fabricating URLs.
+
+## Storybook Auto-Start
+
+After code and stories are written, start Storybook automatically unless user explicitly disables it.
+
+1. Use the fixed project command `npm run storybook`.
+2. Default to non-blocking startup in Windows PowerShell:
+   - `Start-Process -FilePath "npm.cmd" -ArgumentList @("run","storybook") -WorkingDirectory "<repo-root>"`
+3. If debugging is required, run blocking command instead:
+   - `npm run storybook`
+4. If `package.json` does not include `storybook` script, report the missing script and stop auto-start.
+5. Report the exact startup command used and expected Storybook URL.
 
 ## Fallback Rules
 
-- If the raw design context is too shallow, stop and rerun `figma-context-extractor` with a higher `--depth`.
-- If vector geometry is required but missing, rerun `figma-context-extractor` with `--include-geometry`.
-- If no reusable component matches, create the smallest new component that still fits the design system.
-- If the visual design is clear but implementation details are missing, produce a safe scaffold and call out the exact unknowns.
+- If raw context remains insufficient after targeted re-extraction, deliver a minimal scaffold and list exact unknowns.
+- Never invent tokens, BDL primitives, or image URLs that are not present in repository or raw data.
+- Keep assumptions explicit and easy to revise.

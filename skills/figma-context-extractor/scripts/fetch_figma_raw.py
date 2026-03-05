@@ -156,6 +156,23 @@ def filter_fill_images_payload(fill_payload: dict[str, Any], used_refs: set[str]
     return filtered
 
 
+def extract_fill_image_map(fill_payload: dict[str, Any]) -> dict[str, str]:
+    meta = fill_payload.get("meta")
+    if not isinstance(meta, dict):
+        return {}
+    images = meta.get("images")
+    if not isinstance(images, dict):
+        return {}
+    return {str(ref): str(url) for ref, url in images.items() if isinstance(ref, str) and isinstance(url, str) and url}
+
+
+def extract_render_image_map(render_payload: dict[str, Any]) -> dict[str, str]:
+    images = render_payload.get("images")
+    if not isinstance(images, dict):
+        return {}
+    return {str(node_id): str(url) for node_id, url in images.items() if isinstance(node_id, str) and isinstance(url, str) and url}
+
+
 def merge_supplemental_payload(
     payload: dict[str, Any],
     file_key: str,
@@ -171,7 +188,9 @@ def merge_supplemental_payload(
         fill_url = f"{API_BASE}/files/{file_key}/images"
         fill_payload, fill_error = request_supplemental_json(fill_url, headers, args.timeout)
         if fill_payload is not None:
-            merged["_figma_fill_images"] = filter_fill_images_payload(fill_payload, used_refs)
+            filtered_fill_payload = filter_fill_images_payload(fill_payload, used_refs)
+            merged["_figma_fill_images"] = filtered_fill_payload
+            merged["_figma_fill_images_by_ref"] = extract_fill_image_map(filtered_fill_payload)
         elif fill_error:
             merged["_figma_fill_images_error"] = fill_error
 
@@ -185,6 +204,7 @@ def merge_supplemental_payload(
         render_payload, render_error = request_supplemental_json(render_url, headers, args.timeout)
         if render_payload is not None:
             merged["_figma_render_images"] = render_payload
+            merged["_figma_render_images_by_node_id"] = extract_render_image_map(render_payload)
         elif render_error:
             merged["_figma_render_images_error"] = render_error
 

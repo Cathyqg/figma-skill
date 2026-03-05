@@ -1,61 +1,75 @@
 # Figma REST Endpoints
 
-Use only official Figma REST endpoints for this skill.
+Use only official Figma REST endpoints in this skill.
 
 ## Authentication
 
-- Set token in `FIGMA_TOKEN`
-- Personal Access Token (PAT): send `X-Figma-Token`
-- OAuth token: send `Authorization: Bearer <token>`
+- Set token in `FIGMA_TOKEN`.
+- Personal Access Token (PAT): send `X-Figma-Token`.
+- OAuth token: send `Authorization: Bearer <token>`.
 
 Reference: https://developers.figma.com/docs/rest-api/authentication/
 
 ## Core Endpoints
 
-### 1) File discovery
+### 1) File Discovery
 
 - Endpoint: `GET /v1/files/{file_key}`
-- Purpose: get file metadata and a shallow tree for discovery
+- Purpose: fetch file metadata and a shallow tree when node ids are not known.
 - Important query params:
-  - `depth`: limit tree depth to reduce payload
-  - `geometry=paths`: optional vector geometry, expensive
-  - `plugin_data`: optional plugin payload, expensive
+  - `depth`
+  - `geometry=paths` (optional, expensive)
+  - `plugin_data` (optional, expensive)
 
 Reference: https://developers.figma.com/docs/rest-api/file-endpoints/
 
-### 2) Node-focused extraction
+### 2) Node-Focused Extraction
 
 - Endpoint: `GET /v1/files/{file_key}/nodes`
-- Purpose: pull only selected node subtrees
+- Purpose: fetch selected node subtrees with controlled depth.
 - Important query params:
-  - `ids`: comma-separated node ids
-  - `depth`: subtree depth limit
-  - `geometry=paths`, `plugin_data`: optional when needed
+  - `ids` (comma-separated node ids)
+  - `depth`
+  - `geometry=paths` (optional)
+  - `plugin_data` (optional)
 
 Reference: https://developers.figma.com/docs/rest-api/node-endpoints/
 
-### 3) Optional image export URLs
+### 3) File-Level Fill Asset URLs
+
+- Endpoint: `GET /v1/files/{file_key}/images`
+- Purpose: resolve image URLs for `imageRef` values used by node fills.
+- Notes:
+  - Returns file-level image map.
+  - The extractor filters this map to refs actually present in current payload.
+
+Reference: https://developers.figma.com/docs/rest-api/file-endpoints/
+
+### 4) Node Render Image URLs (Optional)
 
 - Endpoint: `GET /v1/images/{file_key}`
-- Purpose: resolve export URLs for selected nodes
+- Purpose: get rendered image URLs for selected node ids.
 - Important query params:
-  - `ids`, `format`, `scale`
+  - `ids`
+  - `format`
+  - `scale`
 
 Reference: https://developers.figma.com/docs/rest-api/image-endpoints/
 
 ## Node ID Notes
 
-- Shared links often use `node-id=123-456`
-- API expects `123:456`
-- Branch URLs are supported; prefer the `/branch/<BRANCH_KEY>` segment when present.
-- Always normalize before calling `/nodes`
+- Shared links often use `node-id=123-456`.
+- API expects `123:456`.
+- Branch URLs are supported; prefer `/branch/<BRANCH_KEY>` when present.
+- Normalize ids before calling `/nodes` or `/images`.
 
 Reference: https://help.figma.com/hc/en-us/articles/360039823894-Get-started-with-URLs-and-links-in-Figma
 
 ## Practical Limits
 
-- Prefer discovery (`depth=2`) first
-- Then extract selected node ids (`depth=3~5`)
-- Handle `429` with retry using `Retry-After`
+- Use discovery with low depth (`1`) when node ids are unknown.
+- Prefer node-focused extraction with modest depth (`4`) first.
+- Raise depth only when required by missing child structure.
+- Handle `429` with retry using `Retry-After`.
 
 Reference: https://developers.figma.com/docs/rest-api/errors/
