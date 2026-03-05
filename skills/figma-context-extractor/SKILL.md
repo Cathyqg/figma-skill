@@ -116,10 +116,10 @@ Start with the smallest payload that can answer the task. Re-run only when the c
 
 ## Python Runtime Compatibility
 
-Use PowerShell wrapper entry point to avoid hard-coding a Python executable name.
+Use a bash wrapper entry point to avoid hard-coding a Python executable name.
 
-- Wrapper: `<skill-dir>/scripts/run_fetch_figma_raw.ps1`
-- Detection order: `py -3` -> `py` -> `python3` -> `python`
+- Wrapper: `<skill-dir>/scripts/run_fetch_figma_raw.sh`
+- Detection order: `python3` -> `python`
 - Behavior:
   - Forwards all CLI flags to `fetch_figma_raw.py`
   - Preserves script exit code
@@ -129,36 +129,36 @@ Use PowerShell wrapper entry point to avoid hard-coding a Python executable name
 
 Default node/file extraction:
 
-```powershell
-& "<skill-dir>/scripts/run_fetch_figma_raw.ps1" `
+```bash
+<skill-dir>/scripts/run_fetch_figma_raw.sh \
   --figma-url "https://www.figma.com/design/<FILE_KEY>/<NAME>"
 ```
 
 Vector-fidelity extraction (geometry):
 
-```powershell
-& "<skill-dir>/scripts/run_fetch_figma_raw.ps1" `
-  --figma-url "https://www.figma.com/design/<FILE_KEY>/<NAME>?node-id=123-456" `
-  --include-geometry `
+```bash
+<skill-dir>/scripts/run_fetch_figma_raw.sh \
+  --figma-url "https://www.figma.com/design/<FILE_KEY>/<NAME>?node-id=123-456" \
+  --include-geometry \
   --depth 8
 ```
 
 Node render URLs (for visual cross-check):
 
-```powershell
-& "<skill-dir>/scripts/run_fetch_figma_raw.ps1" `
-  --figma-url "https://www.figma.com/design/<FILE_KEY>/<NAME>?node-id=123-456" `
-  --include-render-image-urls `
-  --render-format png `
+```bash
+<skill-dir>/scripts/run_fetch_figma_raw.sh \
+  --figma-url "https://www.figma.com/design/<FILE_KEY>/<NAME>?node-id=123-456" \
+  --include-render-image-urls \
+  --render-format png \
   --render-scale 2
 ```
 
 Disable file-level fill asset URLs:
 
-```powershell
-& "<skill-dir>/scripts/run_fetch_figma_raw.ps1" `
-  --file-key "<FILE_KEY>" `
-  --node-ids "123:456,789:1011" `
+```bash
+<skill-dir>/scripts/run_fetch_figma_raw.sh \
+  --file-key "<FILE_KEY>" \
+  --node-ids "123:456,789:1011" \
   --no-asset-urls
 ```
 
@@ -203,7 +203,7 @@ Raw output may include these supplemental fields:
 
 ## Resources
 
-- Main entry: `<skill-dir>/scripts/run_fetch_figma_raw.ps1`
+- Main entry: `<skill-dir>/scripts/run_fetch_figma_raw.sh`
 - Core script: `<skill-dir>/scripts/fetch_figma_raw.py`
 - Shared helpers: `<skill-dir>/scripts/figma_common.py`
 - Endpoint notes: `<skill-dir>/references/figma-rest-endpoints.md`

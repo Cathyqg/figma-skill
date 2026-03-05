@@ -89,8 +89,8 @@ Do not re-run extractor without a concrete missing signal.
 
 Use fixed project command `npm run storybook`.
 
-- Default non-blocking startup in PowerShell:
-  - `Start-Process -FilePath "npm.cmd" -ArgumentList @("run","storybook") -WorkingDirectory "<repo-root>"`
+- Default non-blocking startup in bash:
+  - `nohup npm run storybook > .storybook.log 2>&1 &`
 - For debugging, run blocking command:
   - `npm run storybook`
 - If `package.json` lacks `storybook` script, report the missing script and stop auto-start.
