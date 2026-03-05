@@ -1,6 +1,6 @@
 ---
 name: figma-context-extractor
-description: Fetch raw Figma REST data for downstream UI implementation. Use when a user provides a Figma URL or node ids and needs stable JSON artifacts (including image asset URLs by default and optional render URLs) before component coding.
+description: Fetch raw Figma REST data for downstream UI implementation. Use when a user provides a Figma URL or node ids and needs stable JSON artifacts (including image asset URLs and auto-detected SVG icon URLs by default) before component coding.
 ---
 
 # Figma Context Extractor
@@ -15,7 +15,6 @@ Produce a stable raw JSON artifact from official Figma REST endpoints. Keep scri
   - Branch URLs are supported. If `/branch/<BRANCH_KEY>` exists, use branch key first.
 - `FIGMA_TOKEN` (required by default)
 - `node_id` list (recommended for node-scoped extraction)
-- `FIGMA_OUTPUT_DIR` (optional default output directory)
 - `auth_mode` (optional, default `pat`)
 - `env_file` (optional, default `.env`)
 
@@ -34,17 +33,9 @@ Produce a stable raw JSON artifact from official Figma REST endpoints. Keep scri
 
 ### Output
 
-- `--output`
-  - Full output file path. Highest priority.
-- `--output-dir`
-  - Output directory. Used when `--output` is not set.
-- `--output-name`
-  - Output filename inside `--output-dir`.
-- Resolution order
-  - `--output` -> `--output-dir` -> `FIGMA_OUTPUT_DIR` -> `tmp/figma`
-- Team convention
-  - Use `FIGMA_OUTPUT_DIR` as default and omit `--output-dir` in normal commands.
-  - Pass `--output-dir` only for temporary per-run override.
+- Output directory is fixed to `spec/figma`.
+- Do not pass output path arguments.
+- Do not configure output directory via environment variables.
 
 ### Auth and Environment
 
@@ -74,6 +65,12 @@ Produce a stable raw JSON artifact from official Figma REST endpoints. Keep scri
   - Enable `GET /v1/images/:file_key` for selected node ids.
 - `--render-format` (default `png`)
 - `--render-scale` (default `2.0`)
+- `--auto-svg-icon-urls` / `--no-auto-svg-icon-urls` (default on)
+  - Auto-detect vector/icon-like nodes from returned subtree and request `format=svg` render URLs.
+- `--auto-svg-icon-limit` (default `80`)
+  - Max auto-detected node ids requested in one SVG render call.
+- `--inline-svg-icon-content` / `--no-inline-svg-icon-content` (default on)
+  - Download auto-detected SVG icon URLs and inline SVG XML content into the raw response.
 
 ### Network
 
@@ -111,8 +108,9 @@ Start with the smallest payload that can answer the task. Re-run only when the c
 1. Resolve `file_key` and node ids from URL/flags.
 2. Run `GET /v1/files/:file_key/nodes` when node ids exist; otherwise run `GET /v1/files/:file_key`.
 3. By default run `GET /v1/files/:file_key/images`, then keep only image refs used in current payload.
-4. Only when requested, run `GET /v1/images/:file_key` for node render URLs.
-5. Write one stable raw JSON file and return raw JSON only.
+4. By default, auto-detect vector/icon-like nodes and run `GET /v1/images/:file_key` with `format=svg` for those node ids.
+5. Only when requested, additionally run `GET /v1/images/:file_key` for explicit node render URLs (`--include-render-image-urls`).
+6. Write one stable raw JSON file under `spec/figma/` and return raw JSON only.
 
 ## Python Runtime Compatibility
 
@@ -163,7 +161,28 @@ py -3 <skill-dir>/scripts/fetch_figma_raw.py \
   --no-asset-urls
 ```
 
+Disable automatic SVG icon URL extraction:
+
+```bash
+py -3 <skill-dir>/scripts/fetch_figma_raw.py \
+  --figma-url "https://www.figma.com/design/<FILE_KEY>/<NAME>?node-id=123-456" \
+  --no-auto-svg-icon-urls
+```
+
+Disable SVG XML inline content while keeping automatic SVG icon URL extraction:
+
+```bash
+py -3 <skill-dir>/scripts/fetch_figma_raw.py \
+  --figma-url "https://www.figma.com/design/<FILE_KEY>/<NAME>?node-id=123-456" \
+  --no-inline-svg-icon-content
+```
+
 ## Output Contract
+
+Output location rules:
+
+- Always write to `spec/figma`.
+- Do not expose or accept output path overrides.
 
 Raw output may include these supplemental fields:
 
@@ -181,6 +200,28 @@ Raw output may include these supplemental fields:
   - Flattened `nodeId -> url` map derived from `_figma_render_images`.
 - `_figma_render_images_error`
   - Error string when render image call fails.
+- `_figma_svg_icon_nodes`
+  - Auto-detected vector/icon-like nodes as `{id, type, name}`.
+- `_figma_svg_icon_nodes_total`
+  - Total auto-detected SVG candidate node count.
+- `_figma_svg_icon_nodes_selected`
+  - Candidate count selected for SVG URL request after applying limit.
+- `_figma_svg_icon_nodes_truncated`
+  - Present when selected count is lower than total due to `--auto-svg-icon-limit`.
+- `_figma_svg_icon_node_ids`
+  - Node ids used for automatic `format=svg` render URL request.
+- `_figma_svg_icon_images`
+  - Raw payload from automatic `GET /v1/images/:file_key?format=svg`.
+- `_figma_svg_icon_images_by_node_id`
+  - Flattened `nodeId -> svgUrl` map derived from `_figma_svg_icon_images`.
+- `_figma_svg_icon_assets`
+  - Convenience list `{id, type, name, svg_url}`.
+- `_figma_svg_icon_images_error`
+  - Error string when automatic SVG icon URL request fails.
+- `_figma_svg_icon_xml_by_node_id`
+  - Flattened `nodeId -> svgXml` map downloaded from auto SVG icon URLs.
+- `_figma_svg_icon_xml_errors_by_node_id`
+  - Per-node error map when SVG XML download fails.
 
 ## Troubleshooting
 
@@ -192,6 +233,8 @@ Raw output may include these supplemental fields:
   - Re-run with higher `--depth`.
 - Vector paths are missing
   - Re-run with `--include-geometry`.
+- `_figma_svg_icon_nodes_total` is high but `_figma_svg_icon_nodes_selected` is low
+  - Increase `--auto-svg-icon-limit` if you need more auto-exported SVG URLs.
 
 ## Guardrails
 
@@ -200,7 +243,7 @@ Raw output may include these supplemental fields:
 - Prefer node-scoped extraction when node ids are known.
 - Keep cleanup minimal and deterministic.
 - Keep file-level asset URL fetching enabled unless explicitly disabled.
-- Keep render image fetching opt-in.
+- Keep explicit render image fetching opt-in.
 
 ## Resources
 

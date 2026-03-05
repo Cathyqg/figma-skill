@@ -10,8 +10,7 @@ from pathlib import Path
 from typing import Any
 
 PATH_MARKERS = {"file", "design", "proto", "board", "slides", "buzz"}
-DEFAULT_OUTPUT_ENV = "FIGMA_OUTPUT_DIR"
-DEFAULT_OUTPUT_DIR = "tmp/figma"
+FIXED_OUTPUT_DIR = Path("spec/figma")
 
 
 def normalize_node_id(value: str) -> str:
@@ -115,17 +114,6 @@ def resolve_token(token_env: str, env_file: str) -> str | None:
     return resolve_env_value(token_env, env_file)
 
 
-def resolve_output_dir(output_dir: str | None, env_file: str) -> Path:
-    if output_dir:
-        return Path(output_dir)
-
-    env_value = resolve_env_value(DEFAULT_OUTPUT_ENV, env_file)
-    if env_value:
-        return Path(env_value)
-
-    return Path(DEFAULT_OUTPUT_DIR)
-
-
 def slugify_filename(value: str, default: str = "figma") -> str:
     cleaned = re.sub(r"[\\/:*?\"<>|]+", " ", value.strip())
     cleaned = re.sub(r"\s+", "-", cleaned)
@@ -181,18 +169,10 @@ def build_output_stem(file_key: str, node_ids: list[str], payload: dict[str, Any
 
 
 def resolve_output_path(
-    output: str | None,
-    output_dir: str | None,
-    output_name: str | None,
-    env_file: str,
     file_key: str,
     node_ids: list[str],
     payload: dict[str, Any],
     suffix: str,
 ) -> Path:
-    if output:
-        return Path(output)
-
-    target_dir = resolve_output_dir(output_dir, env_file)
-    filename = output_name or f"{build_output_stem(file_key, node_ids, payload)}{suffix}"
-    return target_dir / filename
+    filename = f"{build_output_stem(file_key, node_ids, payload)}{suffix}"
+    return FIXED_OUTPUT_DIR / filename

@@ -18,22 +18,29 @@ Implement or extend React components from extractor output and existing reposito
 ## Required Context
 
 - Repository root `AGENTS.md`
-- Raw design context file from `figma-context-extractor`
+- Raw design context artifacts under fixed directory `spec/figma` (produced by `figma-context-extractor`)
 - Target node id or explicit UI scope
 - Relevant existing components, styles, and `*.stories.tsx`
 - Optional visual aids:
   - `_figma_fill_images_by_ref` for source image assets
   - `_figma_render_images_by_node_id` for visual cross-check only
 
+## Raw Context Location
+
+- Read extractor artifacts from `spec/figma` only.
+- Do not ask user to provide a custom raw data path.
+- If `spec/figma` has multiple files, pick the file matching target node/scope; otherwise pick the latest extractor artifact.
+
 ## Execution Flow
 
 1. Read `AGENTS.md` and nearby component implementations first.
-2. Confirm raw context covers target node and required child depth.
-3. If raw context is insufficient, re-run extractor using the matrix below.
-4. Parse the node subtree into semantic blocks and map them to existing components/BDL primitives.
-5. Implement minimal, repository-style code changes.
-6. Update matching stories when behavior, visuals, or public API changes.
-7. Launch Storybook and report command plus expected URL.
+2. Load raw context from `spec/figma`.
+3. Confirm raw context covers target node and required child depth.
+4. If raw context is insufficient, re-run extractor using the matrix below.
+5. Parse the node subtree into semantic blocks and map them to existing components/BDL primitives.
+6. Implement minimal, repository-style code changes.
+7. Update matching stories when behavior, visuals, or public API changes.
+8. Launch Storybook and report command plus expected URL.
 
 ## Re-Extraction Matrix
 

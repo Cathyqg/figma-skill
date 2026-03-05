@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 import urllib.error
@@ -16,6 +17,16 @@ from figma_common import dedupe, normalize_node_id, parse_figma_url, resolve_out
 
 API_BASE = "https://api.figma.com/v1"
 ASSET_REF_KEYS = {"imageRef"}
+VECTOR_NODE_TYPES = {
+    "VECTOR",
+    "BOOLEAN_OPERATION",
+    "STAR",
+    "LINE",
+    "ELLIPSE",
+    "REGULAR_POLYGON",
+}
+ICON_CONTAINER_TYPES = {"FRAME", "GROUP", "COMPONENT", "INSTANCE", "COMPONENT_SET"}
+ICON_NAME_PATTERN = re.compile(r"(^|[^a-z0-9])(icon|ico)([^a-z0-9]|$)")
 
 
 def parse_args() -> argparse.Namespace:
@@ -24,9 +35,6 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--file-key", help="Figma file key; overrides URL parsing")
     p.add_argument("--node-id", action="append", default=[], help="Repeatable node id")
     p.add_argument("--node-ids", help="Comma-separated node ids")
-    p.add_argument("--output", help="Output JSON path (overrides output-dir/output-name)")
-    p.add_argument("--output-dir", help="Output directory (defaults to FIGMA_OUTPUT_DIR or tmp/figma)")
-    p.add_argument("--output-name", help="Output filename when using output-dir")
     p.add_argument("--token-env", default="FIGMA_TOKEN", help="Figma token env variable")
     p.add_argument("--env-file", default=".env", help="Optional dotenv file path")
     p.add_argument(
@@ -52,6 +60,37 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--render-format", choices=["png", "jpg", "svg", "pdf"], default="png")
     p.add_argument("--render-scale", type=float, default=2.0)
+    p.add_argument(
+        "--auto-svg-icon-urls",
+        dest="auto_svg_icon_urls",
+        action="store_true",
+        help="Auto-detect vector/icon nodes in the extracted subtree and request SVG render URLs for them",
+    )
+    p.add_argument(
+        "--no-auto-svg-icon-urls",
+        dest="auto_svg_icon_urls",
+        action="store_false",
+        help="Disable automatic SVG render URL requests for vector/icon nodes",
+    )
+    p.add_argument(
+        "--auto-svg-icon-limit",
+        type=int,
+        default=80,
+        help="Maximum auto-detected vector/icon node IDs to request as SVG",
+    )
+    p.add_argument(
+        "--inline-svg-icon-content",
+        dest="inline_svg_icon_content",
+        action="store_true",
+        help="Download auto-detected SVG icon URLs and inline SVG XML content in the response",
+    )
+    p.add_argument(
+        "--no-inline-svg-icon-content",
+        dest="inline_svg_icon_content",
+        action="store_false",
+        help="Do not inline SVG XML content for auto-detected SVG icon URLs",
+    )
+    p.set_defaults(auto_svg_icon_urls=True, inline_svg_icon_content=True)
     p.add_argument("--plugin-data", help="Pass plugin_data query value")
     p.add_argument("--timeout", type=int, default=30)
     return p.parse_args()
@@ -94,6 +133,40 @@ def request_supplemental_json(
 ) -> tuple[dict[str, Any] | None, str | None]:
     try:
         return request_json(url, headers, timeout), None
+    except RuntimeError as exc:
+        return None, str(exc)
+
+
+def request_text(url: str, headers: dict[str, str], timeout: int) -> str:
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                payload = resp.read()
+                charset = resp.headers.get_content_charset() or "utf-8"
+                return payload.decode(charset, errors="replace")
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            if e.code == 429 and attempt < 3:
+                wait = e.headers.get("Retry-After", "1")
+                time.sleep(max(int(wait) if wait.isdigit() else 1, 1))
+                continue
+            raise RuntimeError(f"SVG fetch {e.code}: {body}") from e
+        except urllib.error.URLError as e:
+            if attempt < 3:
+                time.sleep(1)
+                continue
+            raise RuntimeError(f"Network error: {e}") from e
+    raise RuntimeError("Request retries exhausted")
+
+
+def request_supplemental_text(
+    url: str,
+    headers: dict[str, str],
+    timeout: int,
+) -> tuple[str | None, str | None]:
+    try:
+        return request_text(url, headers, timeout), None
     except RuntimeError as exc:
         return None, str(exc)
 
@@ -173,6 +246,142 @@ def extract_render_image_map(render_payload: dict[str, Any]) -> dict[str, str]:
     return {str(node_id): str(url) for node_id, url in images.items() if isinstance(node_id, str) and isinstance(url, str) and url}
 
 
+def iterate_subtree_nodes(node: Any) -> list[dict[str, Any]]:
+    if not isinstance(node, dict):
+        return []
+
+    out: list[dict[str, Any]] = []
+    stack: list[dict[str, Any]] = [node]
+    while stack:
+        current = stack.pop()
+        out.append(current)
+        children = current.get("children")
+        if isinstance(children, list):
+            for child in reversed(children):
+                if isinstance(child, dict):
+                    stack.append(child)
+    return out
+
+
+def iterate_payload_roots(payload: dict[str, Any], node_ids: list[str]) -> list[dict[str, Any]]:
+    node_map = payload.get("nodes")
+    if node_ids and isinstance(node_map, dict):
+        roots: list[dict[str, Any]] = []
+        for node_id in node_ids:
+            entry = node_map.get(node_id)
+            if not isinstance(entry, dict):
+                continue
+            document = entry.get("document")
+            if isinstance(document, dict):
+                roots.append(document)
+        return roots
+
+    document = payload.get("document")
+    if isinstance(document, dict):
+        return [document]
+    return []
+
+
+def looks_like_icon_name(value: str) -> bool:
+    lowered = value.lower()
+    if lowered.startswith("ic_") or lowered.startswith("ic-"):
+        return True
+    return ICON_NAME_PATTERN.search(lowered) is not None
+
+
+def is_svg_icon_candidate(node: dict[str, Any]) -> bool:
+    node_type = node.get("type")
+    if not isinstance(node_type, str):
+        return False
+
+    if node_type in VECTOR_NODE_TYPES:
+        return True
+
+    if node_type in ICON_CONTAINER_TYPES:
+        name = node.get("name")
+        if isinstance(name, str) and looks_like_icon_name(name):
+            return True
+    return False
+
+
+def collect_svg_icon_candidates(payload: dict[str, Any], node_ids: list[str]) -> list[dict[str, str]]:
+    roots = iterate_payload_roots(payload, node_ids)
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    for root in roots:
+        for node in iterate_subtree_nodes(root):
+            if not is_svg_icon_candidate(node):
+                continue
+            node_id = node.get("id")
+            node_type = node.get("type")
+            if not isinstance(node_id, str) or not isinstance(node_type, str):
+                continue
+            if node_id in seen:
+                continue
+            seen.add(node_id)
+            name = node.get("name")
+            out.append(
+                {
+                    "id": node_id,
+                    "type": node_type,
+                    "name": name if isinstance(name, str) else "",
+                }
+            )
+    return out
+
+
+def build_svg_icon_assets(
+    svg_nodes: list[dict[str, str]],
+    svg_map: dict[str, str],
+) -> list[dict[str, str]]:
+    assets: list[dict[str, str]] = []
+    for item in svg_nodes:
+        node_id = item.get("id")
+        if not node_id:
+            continue
+        svg_url = svg_map.get(node_id)
+        if not svg_url:
+            continue
+        assets.append(
+            {
+                "id": node_id,
+                "type": item.get("type", ""),
+                "name": item.get("name", ""),
+                "svg_url": svg_url,
+            }
+        )
+    return assets
+
+
+def fetch_svg_icon_xml_by_node_id(
+    svg_nodes: list[dict[str, str]],
+    svg_map: dict[str, str],
+    timeout: int,
+) -> tuple[dict[str, str], dict[str, str]]:
+    xml_headers = {
+        "Accept": "image/svg+xml,text/plain,*/*",
+        "User-Agent": "figma-raw-fetch/1.0",
+    }
+    xml_by_node_id: dict[str, str] = {}
+    errors_by_node_id: dict[str, str] = {}
+
+    for item in svg_nodes:
+        node_id = item.get("id")
+        if not node_id:
+            continue
+        svg_url = svg_map.get(node_id)
+        if not svg_url:
+            continue
+        svg_xml, svg_error = request_supplemental_text(svg_url, xml_headers, timeout)
+        if svg_xml is not None:
+            xml_by_node_id[node_id] = svg_xml
+        elif svg_error:
+            errors_by_node_id[node_id] = svg_error
+
+    return xml_by_node_id, errors_by_node_id
+
+
 def merge_supplemental_payload(
     payload: dict[str, Any],
     file_key: str,
@@ -207,6 +416,41 @@ def merge_supplemental_payload(
             merged["_figma_render_images_by_node_id"] = extract_render_image_map(render_payload)
         elif render_error:
             merged["_figma_render_images_error"] = render_error
+
+    if args.auto_svg_icon_urls:
+        svg_icon_nodes = collect_svg_icon_candidates(payload, node_ids)
+        merged["_figma_svg_icon_nodes"] = svg_icon_nodes
+        merged["_figma_svg_icon_nodes_total"] = len(svg_icon_nodes)
+
+        max_count = max(int(args.auto_svg_icon_limit), 0)
+        selected_svg_icon_nodes = svg_icon_nodes[:max_count] if max_count else []
+        merged["_figma_svg_icon_nodes_selected"] = len(selected_svg_icon_nodes)
+        merged["_figma_svg_icon_node_ids"] = [item["id"] for item in selected_svg_icon_nodes]
+
+        if len(selected_svg_icon_nodes) < len(svg_icon_nodes):
+            merged["_figma_svg_icon_nodes_truncated"] = True
+
+        selected_ids = [item["id"] for item in selected_svg_icon_nodes]
+        if selected_ids:
+            params = {"ids": ",".join(selected_ids), "format": "svg"}
+            svg_render_url = f"{API_BASE}/images/{file_key}?" + urllib.parse.urlencode(params, safe=",")
+            svg_render_payload, svg_render_error = request_supplemental_json(svg_render_url, headers, args.timeout)
+            if svg_render_payload is not None:
+                svg_map = extract_render_image_map(svg_render_payload)
+                merged["_figma_svg_icon_images"] = svg_render_payload
+                merged["_figma_svg_icon_images_by_node_id"] = svg_map
+                merged["_figma_svg_icon_assets"] = build_svg_icon_assets(selected_svg_icon_nodes, svg_map)
+                if args.inline_svg_icon_content:
+                    svg_xml_by_node_id, svg_xml_errors_by_node_id = fetch_svg_icon_xml_by_node_id(
+                        selected_svg_icon_nodes,
+                        svg_map,
+                        args.timeout,
+                    )
+                    merged["_figma_svg_icon_xml_by_node_id"] = svg_xml_by_node_id
+                    if svg_xml_errors_by_node_id:
+                        merged["_figma_svg_icon_xml_errors_by_node_id"] = svg_xml_errors_by_node_id
+            elif svg_render_error:
+                merged["_figma_svg_icon_images_error"] = svg_render_error
 
     return merged
 
@@ -266,10 +510,6 @@ def main() -> int:
     payload = merge_supplemental_payload(payload, file_key, node_ids, headers, args)
 
     out_path = resolve_output_path(
-        output=args.output,
-        output_dir=args.output_dir,
-        output_name=args.output_name,
-        env_file=args.env_file,
         file_key=file_key,
         node_ids=node_ids,
         payload=payload,
