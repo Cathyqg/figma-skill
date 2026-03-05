@@ -1,4 +1,4 @@
 interface:
   display_name: "Figma Context Extractor"
-  short_description: "Fetch raw Figma JSON to fixed spec/figma output"
-  default_prompt: "Use $figma-context-extractor to fetch raw Figma JSON from a URL or node IDs, write artifacts to spec/figma, include fill asset URLs by default, auto-detect vector/icon nodes for SVG render URLs, inline SVG XML content for those nodes, and add explicit render URLs only when needed."
+  short_description: "Fetch raw Figma JSON with default SVG hash manifests"
+  default_prompt: "Use $figma-context-extractor to fetch raw Figma JSON from a URL or node IDs, write artifacts to spec/figma, include fill asset URLs by default, auto-detect vector/icon nodes for SVG render URLs, inline SVG XML content for those nodes, generate SVG hash manifest/cache artifacts by default (unless explicitly disabled), and add explicit render URLs only when needed."

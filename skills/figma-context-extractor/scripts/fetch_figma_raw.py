@@ -11,8 +11,10 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 from typing import Any
 
+from export_svg_assets import build_manifest as build_svg_manifest, infer_manifest_path as infer_svg_manifest_path
 from figma_common import dedupe, normalize_node_id, parse_figma_url, resolve_output_path, resolve_token
 
 API_BASE = "https://api.figma.com/v1"
@@ -90,7 +92,33 @@ def parse_args() -> argparse.Namespace:
         action="store_false",
         help="Do not inline SVG XML content for auto-detected SVG icon URLs",
     )
-    p.set_defaults(auto_svg_icon_urls=True, inline_svg_icon_content=True)
+    p.add_argument(
+        "--export-svg-manifest",
+        dest="export_svg_manifest",
+        action="store_true",
+        help="Generate a normalized SVG hash manifest and cache files after raw extraction (default)",
+    )
+    p.add_argument(
+        "--no-export-svg-manifest",
+        dest="export_svg_manifest",
+        action="store_false",
+        help="Disable SVG hash manifest/cache generation",
+    )
+    p.add_argument(
+        "--svg-cache-dir",
+        default="spec/figma/assets/svg",
+        help="Cache directory for hash-named SVG files when --export-svg-manifest is enabled",
+    )
+    p.add_argument(
+        "--svg-manifest-path",
+        help="Optional explicit output path for SVG hash manifest when --export-svg-manifest is enabled",
+    )
+    p.add_argument(
+        "--overwrite-svg-cache",
+        action="store_true",
+        help="Overwrite existing hash SVG cache files when --export-svg-manifest is enabled",
+    )
+    p.set_defaults(auto_svg_icon_urls=True, inline_svg_icon_content=True, export_svg_manifest=True)
     p.add_argument("--plugin-data", help="Pass plugin_data query value")
     p.add_argument("--timeout", type=int, default=30)
     return p.parse_args()
@@ -518,6 +546,23 @@ def main() -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Wrote raw response: {out_path}")
+
+    if args.export_svg_manifest:
+        svg_cache_dir = Path(args.svg_cache_dir)
+        manifest_path = Path(args.svg_manifest_path) if args.svg_manifest_path else infer_svg_manifest_path(out_path)
+        svg_cache_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+
+        manifest = build_svg_manifest(out_path, svg_cache_dir, payload, args.overwrite_svg_cache, Path.cwd())
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(f"Wrote SVG manifest: {manifest_path}")
+        print(
+            "SVG assets: total={total}, wrote={wrote}, reused={reused}".format(
+                total=manifest["asset_count"],
+                wrote=manifest["written_count"],
+                reused=manifest["reused_count"],
+            )
+        )
     return 0
 
 

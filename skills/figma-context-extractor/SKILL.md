@@ -1,6 +1,6 @@
 ---
 name: figma-context-extractor
-description: Fetch raw Figma REST data for downstream UI implementation. Use when a user provides a Figma URL or node ids and needs stable JSON artifacts (including image asset URLs and auto-detected SVG icon URLs by default) before component coding.
+description: Fetch raw Figma REST data for downstream UI implementation. Use when a user provides a Figma URL or node ids and needs stable JSON artifacts (including image asset URLs and auto-detected SVG icon URLs by default) before component coding, with default SVG hash manifest generation for downstream asset dedupe.
 ---
 
 # Figma Context Extractor
@@ -72,6 +72,19 @@ Produce a stable raw JSON artifact from official Figma REST endpoints. Keep scri
 - `--inline-svg-icon-content` / `--no-inline-svg-icon-content` (default on)
   - Download auto-detected SVG icon URLs and inline SVG XML content into the raw response.
 
+### SVG Manifest Export (Default On)
+
+- `--export-svg-manifest`
+  - Explicitly enable hash-based SVG cache files and a `*-svg-manifest.json` file after writing raw JSON.
+- `--no-export-svg-manifest`
+  - Disable hash-based SVG cache and manifest generation for this run.
+- `--svg-cache-dir` (default `spec/figma/assets/svg`)
+  - Cache directory for hash-named SVG files.
+- `--svg-manifest-path` (default inferred from raw filename)
+  - Optional explicit output path for manifest JSON.
+- `--overwrite-svg-cache` (default off)
+  - Overwrite existing hash SVG files in cache directory.
+
 ### Network
 
 - `--timeout` (default `30` seconds)
@@ -111,6 +124,9 @@ Start with the smallest payload that can answer the task. Re-run only when the c
 4. By default, auto-detect vector/icon-like nodes and run `GET /v1/images/:file_key` with `format=svg` for those node ids.
 5. Only when requested, additionally run `GET /v1/images/:file_key` for explicit node render URLs (`--include-render-image-urls`).
 6. Write one stable raw JSON file under `spec/figma/` and return raw JSON only.
+7. By default, generate normalized SVG hash artifacts for downstream asset reuse.
+8. Only when needed, disable default manifest export with `--no-export-svg-manifest`.
+9. Optional fallback: run `<skill-dir>/scripts/export_svg_assets.py` on an existing raw file.
 
 ## Python Runtime Compatibility
 
@@ -177,6 +193,29 @@ py -3 <skill-dir>/scripts/fetch_figma_raw.py \
   --no-inline-svg-icon-content
 ```
 
+Generate optional SVG hash manifest and cache files from a raw artifact:
+
+```bash
+py -3 <skill-dir>/scripts/export_svg_assets.py \
+  --raw-json "spec/figma/<EXTRACTED>-raw.json"
+```
+
+Generate raw output and SVG hash manifest in one command:
+
+```bash
+py -3 <skill-dir>/scripts/fetch_figma_raw.py \
+  --figma-url "https://www.figma.com/design/<FILE_KEY>/<NAME>?node-id=123-456" \
+  --export-svg-manifest
+```
+
+Disable default SVG hash manifest export:
+
+```bash
+py -3 <skill-dir>/scripts/fetch_figma_raw.py \
+  --figma-url "https://www.figma.com/design/<FILE_KEY>/<NAME>?node-id=123-456" \
+  --no-export-svg-manifest
+```
+
 ## Output Contract
 
 Output location rules:
@@ -223,6 +262,15 @@ Raw output may include these supplemental fields:
 - `_figma_svg_icon_xml_errors_by_node_id`
   - Per-node error map when SVG XML download fails.
 
+Optional post-processing output from `<skill-dir>/scripts/export_svg_assets.py`:
+
+- Sibling manifest: `spec/figma/*-svg-manifest.json`
+  - Includes `assets[]` entries with `node_id`, `name`, `type`, `svg_url`, `svg_hash`, and `cached_svg_path`.
+- Cached SVG files: `spec/figma/assets/svg/<sha256>.svg`
+  - Hash is generated from normalized SVG XML content.
+
+The same SVG manifest/cache artifacts are produced by default when `fetch_figma_raw.py` runs.
+
 ## Troubleshooting
 
 - `_figma_fill_images_by_ref` is empty and `_figma_used_asset_refs` is empty
@@ -248,5 +296,6 @@ Raw output may include these supplemental fields:
 ## Resources
 
 - Main entry: `<skill-dir>/scripts/fetch_figma_raw.py`
+- Optional SVG hash exporter: `<skill-dir>/scripts/export_svg_assets.py`
 - Shared helpers: `<skill-dir>/scripts/figma_common.py`
 - Endpoint notes: `<skill-dir>/references/figma-rest-endpoints.md`

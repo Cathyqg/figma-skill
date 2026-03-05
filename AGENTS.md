@@ -34,7 +34,16 @@
 
 - Use `skills/figma-context-extractor/` to retrieve raw Figma design context when design data must be refreshed.
 - Use `skills/figma-component-implementer/` to interpret Figma raw data and decide how to implement or extend React components.
+- Keep extractor output deterministic under `spec/figma` and generate SVG manifest/cache artifacts by default.
+- Run SVG hash reuse resolution before component code changes and report reuse/new decisions.
 - Re-run the extractor with higher-cost flags only when the current raw payload is insufficient for the task.
+
+## Asset Reuse Rules
+
+- Treat SVG URLs/XML extracted from Figma as candidate sources, not production runtime URLs.
+- Before adding a new SVG asset, try reusing an existing project asset by deterministic hash of normalized SVG content.
+- Add a new SVG file only when no existing asset matches the normalized hash.
+- Keep new SVG assets in the repository's existing asset directories and export flow; do not invent parallel asset structures.
 
 ## Stories And Validation
 

@@ -1,4 +1,4 @@
 interface:
   display_name: "Figma Component Implementer"
-  short_description: "Implement React components from spec/figma raw context"
-  default_prompt: "Use $figma-component-implementer to read Figma raw context from spec/figma and map it into reuse-first React component and Storybook changes that follow repository rules."
+  short_description: "Implement components with SVG hash-based asset reuse"
+  default_prompt: "Use $figma-component-implementer to read Figma raw context from spec/figma, automatically run SVG hash-based reuse resolution from the latest manifest before adding new assets, and map designs into reuse-first React component and Storybook changes that follow repository rules."
