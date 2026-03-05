@@ -116,28 +116,29 @@ Start with the smallest payload that can answer the task. Re-run only when the c
 
 ## Python Runtime Compatibility
 
-Use a bash wrapper entry point to avoid hard-coding a Python executable name.
+Do not assume `python` is available in every environment.
 
-- Wrapper: `<skill-dir>/scripts/run_fetch_figma_raw.sh`
-- Detection order: `python3` -> `python`
-- Behavior:
-  - Forwards all CLI flags to `fetch_figma_raw.py`
-  - Preserves script exit code
-  - Fails with explicit error if no Python launcher is found
+- Preferred interpreter order:
+  - `py -3`
+  - `py`
+  - `python3`
+  - `python`
+- Use the first available interpreter to run `<skill-dir>/scripts/fetch_figma_raw.py`.
+- If one command fails with "not found", retry immediately with the next interpreter.
 
 ## Command Recipes
 
 Default node/file extraction:
 
 ```bash
-<skill-dir>/scripts/run_fetch_figma_raw.sh \
+py -3 <skill-dir>/scripts/fetch_figma_raw.py \
   --figma-url "https://www.figma.com/design/<FILE_KEY>/<NAME>"
 ```
 
 Vector-fidelity extraction (geometry):
 
 ```bash
-<skill-dir>/scripts/run_fetch_figma_raw.sh \
+py -3 <skill-dir>/scripts/fetch_figma_raw.py \
   --figma-url "https://www.figma.com/design/<FILE_KEY>/<NAME>?node-id=123-456" \
   --include-geometry \
   --depth 8
@@ -146,7 +147,7 @@ Vector-fidelity extraction (geometry):
 Node render URLs (for visual cross-check):
 
 ```bash
-<skill-dir>/scripts/run_fetch_figma_raw.sh \
+py -3 <skill-dir>/scripts/fetch_figma_raw.py \
   --figma-url "https://www.figma.com/design/<FILE_KEY>/<NAME>?node-id=123-456" \
   --include-render-image-urls \
   --render-format png \
@@ -156,7 +157,7 @@ Node render URLs (for visual cross-check):
 Disable file-level fill asset URLs:
 
 ```bash
-<skill-dir>/scripts/run_fetch_figma_raw.sh \
+py -3 <skill-dir>/scripts/fetch_figma_raw.py \
   --file-key "<FILE_KEY>" \
   --node-ids "123:456,789:1011" \
   --no-asset-urls
@@ -203,7 +204,6 @@ Raw output may include these supplemental fields:
 
 ## Resources
 
-- Main entry: `<skill-dir>/scripts/run_fetch_figma_raw.sh`
-- Core script: `<skill-dir>/scripts/fetch_figma_raw.py`
+- Main entry: `<skill-dir>/scripts/fetch_figma_raw.py`
 - Shared helpers: `<skill-dir>/scripts/figma_common.py`
 - Endpoint notes: `<skill-dir>/references/figma-rest-endpoints.md`
