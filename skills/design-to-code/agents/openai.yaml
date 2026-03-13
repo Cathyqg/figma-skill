@@ -1,0 +1,4 @@
+interface:
+  display_name: "Design to Code"
+  short_description: "Implement repo-consistent React components from a Figma URL"
+  default_prompt: "Use $design-to-code to turn a Figma design URL into repo-consistent React component work: extract raw data to spec/figma, resolve SVG reuse, and either implement component changes in the current codebase or explicitly stop at artifacts if this workspace is not the real component repo."

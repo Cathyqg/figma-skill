@@ -1,0 +1,19 @@
+{
+  "source_raw_json": "spec/figma/frame-34021-171-16060-raw.json",
+  "source_name": "数据资产管理",
+  "source_version": "2329594531097648626",
+  "svg_cache_dir": "spec/figma/assets/svg",
+  "asset_count": 1,
+  "written_count": 1,
+  "reused_count": 0,
+  "assets": [
+    {
+      "node_id": "171:16068",
+      "type": "VECTOR",
+      "name": "Vector",
+      "svg_url": "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/c52be40c-4deb-4a80-97a5-72d0d38ea170",
+      "svg_hash": "f1b15e6c867a7ab70b9301d6b42763ce7de6d8784cf61b0be41c4c2d0bc52d79",
+      "cached_svg_path": "spec/figma/assets/svg/f1b15e6c867a7ab70b9301d6b42763ce7de6d8784cf61b0be41c4c2d0bc52d79.svg"
+    }
+  ]
+}

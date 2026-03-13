@@ -1,0 +1,23 @@
+{
+  "source_manifest": "spec/figma/frame-34021-171-16060-svg-manifest.json",
+  "scan_dirs": [],
+  "new_svg_dir": "",
+  "asset_count": 1,
+  "reuse_count": 0,
+  "new_count": 1,
+  "copied_new_count": 0,
+  "unresolved_new_count": 1,
+  "decisions": [
+    {
+      "node_id": "171:16068",
+      "name": "Vector",
+      "type": "VECTOR",
+      "svg_hash": "f1b15e6c867a7ab70b9301d6b42763ce7de6d8784cf61b0be41c4c2d0bc52d79",
+      "decision": "new",
+      "reuse_asset_path": "",
+      "new_asset_path": "",
+      "new_asset_error": "new_svg_dir_not_set",
+      "cached_svg_path": "spec/figma/assets/svg/f1b15e6c867a7ab70b9301d6b42763ce7de6d8784cf61b0be41c4c2d0bc52d79.svg"
+    }
+  ]
+}
